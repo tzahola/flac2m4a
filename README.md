@@ -2,6 +2,14 @@
 
 Script to convert FLAC albums to gapless M4A AAC on macOS via the built-in `afconvert` utility.
 
+## Dependencies
+
+| Dependency | Purpose | Installation |
+| ---------- | ------- | ------------ |
+| `afconvert`| M4A AAC conversion | comes with macOS |
+| `ffmpeg` | for exporting tags from FLAC files | `brew install ffmpeg` |
+| `AtomicParsley` | for writing tags to M4A files | `brew install AtomicParsley` |
+
 ## Usage
 
 ```
