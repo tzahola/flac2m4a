@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+IFS=$'\n\t'
+
+while (( $# > 0 )); do
+    case "$1" in
+        -o|--output)
+            shift
+            export output="$1"
+            shift
+            ;;
+        -h|--help)
+            echo "flacconv (-o|--output) output_dir [--] input ..."
+            exit
+            ;;
+         --)
+            shift
+            break
+            ;;
+         *)
+            break
+    esac
+done
+
+if [[ "${output:-}" == "" ]]; then
+    echo "output_dir missing!"
+    exit 1
+elif [[ $# == 0 ]]; then
+    echo "No input specified!"
+    exit 2
+fi
+
+for input in "$@"; do
+    if [[ -d "$input" ]]; then
+        export dir="$input"
+        find "$dir" -print0 | while IFS= read -d '' -r file; do
+            printf -- '%s\0%s\0' "$file" "$output/$(basename "$dir")/$(realpath --relative-to="$dir" "$file")"
+        done
+    elif [[ -f "$input" ]]; then
+        printf -- '%s\0%s\0' "$input" "$output/$(basename "$input")"
+    fi
+done | {
+    flacs=()
+    declare -A flacs_to
+
+    while IFS= read -d '' -r from &&
+          IFS= read -d '' -r to ; do
+        if [[ -d "$from" ]]; then
+            mkdir -p "$to"
+        elif [[ "$from" =~ ^.*\.(jpe?g|png|gif)$ ]]; then
+            cp -i "$from" "$to" </dev/tty
+        elif [[ "$from" =~ ^.*\.flac?$ ]]; then
+            flacs+=("$from")
+            flacs_to["$from"]="${to%.*}.m4a"
+        fi
+    done
+
+    for flac in "${flacs[@]}"; do
+        wav="${flacs_to["$flac"]}.wav"
+        printf '%s\0' -d -o "$wav" "$flac"
+    done | xargs -0 -n 4 -P "$(sysctl -n hw.ncpu)" flac
+
+    flacs_sorted=()
+    while IFS= read -d '' -r flac ; do
+        flacs_sorted+=("$flac")
+    done < <(printf '%s\0' "${flacs[@]}" | sort -z)
+
+    for (( i=0; i < ${#flacs_sorted[@]}; i++ )); do
+        flac="${flacs_sorted[$i]}" 
+        m4a="${flacs_to["$flac"]}" 
+        wav="$m4a.wav"
+
+        printf '%q ' afconvert "$wav" "$m4a" -d aac -s 3 -u vbrq 90
+        if [[ $i != 0 && "$(dirname "${flacs_sorted[$(($i - 1))]}")" == "$(dirname "$flac")" ]]; then
+            printf '%q ' --gapless-before "${flacs_to["${flacs_sorted[$(($i - 1))]}"]}.wav"
+        fi
+        if [[ $i != $((${#flacs_sorted[@]} - 1)) && "$(dirname "${flacs_sorted[$(($i + 1))]}")" == "$(dirname "$flac")" ]]; then
+            printf '%q ' --gapless-after "${flacs_to["${flacs_sorted[$(($i + 1))]}"]}.wav"
+        fi
+        printf ';'
+        printf '%q ' flactags2m4atags "$flac" "$m4a"
+        printf '\0'
+    done | xargs -0 -n 1 -P "$(sysctl -n hw.ncpu)" bash -c
+
+    for flac in "${flacs[@]}"; do
+        wav="${flacs_to["$flac"]}.wav"
+        printf '%s\0' "$wav"
+    done | xargs -0 rm
+} 

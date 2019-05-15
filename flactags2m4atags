@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+IFS=$'\n\t'
+
+flac="$1"
+m4a="$2"
+
+set +e
+IFS= read -r -d '' jq_script <<'EOF'
+    def fallback($x): if $x == [] then null elif has($x[0]) then .[$x[0]] else fallback($x[1:]) end;
+    def format_number_pair($a; $b): if $b != null then $a + "/" + $b else $a end;
+    def with_key($k; $v): if $v != null then { ($k): $v } else empty end;
+    def get_year($x): [$x | scan("[0-9]{4}")][0];
+
+    .format.tags | with_entries(.key |= ascii_upcase) | [
+        with_key("--artist"; fallback(["ARTIST"])),
+        with_key("--title"; fallback(["TITLE"])),
+        with_key("--albumArtist"; fallback(["ALBUMARTIST", "ALBUM ARTIST"])),
+        with_key("--album"; fallback(["ALBUM"])),
+        with_key("--genre"; fallback(["GENRE"])),
+        with_key("--tracknum"; format_number_pair(fallback(["TRACK", "TRACKNUMBER", "TRACK NUMBER"]); 
+                                                  fallback(["TRACKTOTAL", "TOTALTRACKS"]))),
+        with_key("--disk"; format_number_pair(fallback(["DISC", "DISCNUMBER", "DISC NUMBER"]); 
+                                              fallback(["DISCTOTAL", "TOTALDISCS"]))),
+        with_key("--year"; get_year(fallback(["DATE", "YEAR"]))),
+        with_key("--lyrics"; fallback(["LYRICS", "UNSYNCEDLYRICS", "UNSYNCED LYRICS"]))
+    ] | add | to_entries | map([.key, .value]) | flatten | @sh "\(.)"
+EOF
+set -e
+
+eval "args=($(ffprobe -print_format json -show_entries format_tags "$flac" 2>/dev/null | jq --raw-output "$jq_script"))"
+AtomicParsley "$m4a" "${args[@]}" --overWrite
