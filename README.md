@@ -22,7 +22,7 @@ flac2m4a -o output_dir -- input_dir1 input_dir2 ...
 - jpg/gif/png files are copied to the output tree as is
 - FLAC files are converted to M4A and copied to the output tree
 - FLAC files in the same input folder are converted gaplessly
-- Parallelized up to the number of CPU cores via `sysctl -n hw.ncpu`
+- Parallel processing via `make -j`
 
 ## Example
 

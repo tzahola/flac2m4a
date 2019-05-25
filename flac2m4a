@@ -88,7 +88,7 @@ function visit() {
         local name="$(basename "$file")"
         local wav="$to/${name%.*}.wav"
         wavs+=("$wav")
-        printf -- '\tflac -s -d -o %q %q\n' "$wav" "$file"
+        printf -- '\tflac -s -d -o %q %q\n' "$wav" "$file" # need to convert FLAC to WAV first, because `afconvert` (in macOS 10.14.4) fails for FLAC input if the output is unconstrained VBR AAC/M4A
     done
     
     local m4a_targets=()
