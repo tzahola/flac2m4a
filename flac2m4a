@@ -31,60 +31,115 @@ elif [[ $# == 0 ]]; then
     exit 2
 fi
 
-for input in "$@"; do
-    if [[ -d "$input" ]]; then
-        export dir="$input"
-        find "$dir" -print0 | while IFS= read -d '' -r file; do
-            printf -- '%s\0%s\0' "$file" "$output/$(basename "$dir")/$(realpath --relative-to="$dir" "$file")"
-        done
-    elif [[ -f "$input" ]]; then
-        printf -- '%s\0%s\0' "$input" "$output/$(basename "$input")"
-    fi
-done | {
-    flacs=()
-    declare -A flacs_to
+targets=()
 
-    while IFS= read -d '' -r from &&
-          IFS= read -d '' -r to ; do
-        if [[ -d "$from" ]]; then
-            mkdir -p "$to"
-        elif [[ "$from" =~ ^.*\.(jpe?g|png|gif)$ ]]; then
-            cp -i "$from" "$to" </dev/tty
-        elif [[ "$from" =~ ^.*\.flac?$ ]]; then
-            flacs+=("$from")
-            flacs_to["$from"]="${to%.*}.m4a"
+function visit() {
+    local from="$1"
+    local to="$2"
+    local parent_target="$3"
+
+    local files=()
+    if [[ -d "$from" ]]; then
+        local target="dir_${#targets[@]}"
+        targets+=("$target")
+        local name="$(basename "$from")"
+        printf -- '.PHONY : %s\n%s : %s\n' "$target" "$target" "$parent_target"
+        printf -- '\tmkdir %q\n' "$to/$name"
+        while IFS= read -r -d '' dir; do
+            visit "$dir" "$to/$name" "$target"
+        done < <(find "$from" -maxdepth 1 -mindepth 1 -type d -print0)
+
+        while IFS= read -r -d '' file; do
+            files+=("$file")
+        done < <(find "$from" -maxdepth 1 -mindepth 1 -type f -print0)
+        to="$to/$name"
+    elif [[ -f "$from" ]]; then
+        files+=("$from")
+    else
+        return
+    fi
+    
+    local flacs=()
+
+    for file in "${files[@]}"; do
+        if [[ "$file" =~ ^.*\.(jpe?g|png|gif)$ ]]; then
+            local target="artwork_${#targets[@]}"
+            targets+=("$target")
+            printf -- '.PHONY : %s\n%s : %s\n' "$target" "$target" "$parent_target"
+            printf -- '\tcp %q %q\n' "$file" "$to/$(basename "$file")"
+        elif [[ "$file" =~ ^.*\.flac?$ ]]; then
+            flacs+=("$file")
         fi
     done
 
-    for flac in "${flacs[@]}"; do
-        wav="${flacs_to["$flac"]}.wav"
-        printf '%s\0' -d -o "$wav" "$flac"
-    done | xargs -0 -n 4 -P "$(sysctl -n hw.ncpu)" flac
-
-    flacs_sorted=()
-    while IFS= read -d '' -r flac ; do
+    local flacs_sorted=()
+    while IFS= read -r -d '' flac; do
         flacs_sorted+=("$flac")
-    done < <(printf '%s\0' "${flacs[@]}" | sort -z)
+    done < <(for flac in "${flacs[@]}"; do printf -- '%s\0' "$flac"; done | sort -z)
+    
+    local wavs=()
+    local wav_targets=()
+    for file in "${flacs_sorted[@]}"; do
+        local wav_target="flac2wav_${#targets[@]}"
+        wav_targets+=("$wav_target")
+        targets+=("$wav_target")
+        printf -- '.PHONY : %s\n%s : %s\n' "$wav_target" "$wav_target" "$parent_target"
+
+        local name="$(basename "$file")"
+        local wav="$to/${name%.*}.wav"
+        wavs+=("$wav")
+        printf -- '\tflac -s -d -o %q %q\n' "$wav" "$file"
+    done
+    
+    local m4a_targets=()
+    for (( i=0; i < ${#flacs_sorted[@]}; i++ )); do
+        local m4a_target="wav2m4a_${#targets[@]}"
+        m4a_targets+=("$m4a_target")
+        targets+=("$m4a_target")
+        printf -- '.PHONY : %s\n%s : %s' "$m4a_target" "$m4a_target" "${wav_targets[$i]}"
+        if [[ $i != 0 ]]; then
+            printf -- ' %s' "${wav_targets[$(($i - 1))]}"
+        fi
+        if [[ $i != $((${#flacs_sorted[@]} - 1)) ]]; then
+            printf -- ' %s' "${wav_targets[$(($i + 1))]}"
+        fi
+        printf -- '\n'
+        
+        local name="$(basename "${flacs_sorted[$i]}")"
+        local m4a="$to/${name%.*}.m4a"
+        printf -- '\tafconvert' 
+        printf -- ' %q' "${wavs[$i]}" "$m4a" -d aac -s 3 -u vbrq 90
+        if [[ $i != 0 ]]; then
+            printf -- ' %q' --gapless-before "${wavs[$(($i - 1))]}"
+        fi
+        if [[ $i != $((${#flacs_sorted[@]} - 1)) ]]; then
+            printf -- ' %q' --gapless-after "${wavs[$(($i + 1))]}"
+        fi
+        printf -- '\n'
+        printf -- '\tflactags2m4atags %q %q >/dev/null\n' "${flacs_sorted[$i]}" "$m4a"
+    done
 
     for (( i=0; i < ${#flacs_sorted[@]}; i++ )); do
-        flac="${flacs_sorted[$i]}" 
-        m4a="${flacs_to["$flac"]}" 
-        wav="$m4a.wav"
-
-        printf '%q ' afconvert "$wav" "$m4a" -d aac -s 3 -u vbrq 90
-        if [[ $i != 0 && "$(dirname "${flacs_sorted[$(($i - 1))]}")" == "$(dirname "$flac")" ]]; then
-            printf '%q ' --gapless-before "${flacs_to["${flacs_sorted[$(($i - 1))]}"]}.wav"
+        local rm_wav_target="rm_wav_${#targets[@]}"
+        targets+=("$rm_wav_target")
+        printf -- '.PHONY : %s\n%s : %s' "$rm_wav_target" "$rm_wav_target" "${m4a_targets[$i]}"
+        if [[ $i != 0 ]]; then
+            printf -- ' %s' "${m4a_targets[$(($i - 1))]}"
         fi
-        if [[ $i != $((${#flacs_sorted[@]} - 1)) && "$(dirname "${flacs_sorted[$(($i + 1))]}")" == "$(dirname "$flac")" ]]; then
-            printf '%q ' --gapless-after "${flacs_to["${flacs_sorted[$(($i + 1))]}"]}.wav"
+        if [[ $i != $((${#flacs_sorted[@]} - 1)) ]]; then
+            printf -- ' %s' "${m4a_targets[$(($i + 1))]}"
         fi
-        printf ';'
-        printf '%q ' flactags2m4atags "$flac" "$m4a"
-        printf '\0'
-    done | xargs -0 -n 1 -P "$(sysctl -n hw.ncpu)" bash -c
+        printf -- '\n'
+        printf -- '\trm -- %q\n' "${wavs[$i]}"
+    done
+}
+{
+    for input in "$@"; do
+        visit "$input" "$output" ""
+    done
 
-    for flac in "${flacs[@]}"; do
-        wav="${flacs_to["$flac"]}.wav"
-        printf '%s\0' "$wav"
-    done | xargs -0 rm
-} 
+    printf ".PHONY : all\nall :"
+    printf ' %s' "${targets[@]}"
+    printf '\n.DEFAULT_GOAL := all\n'
+} | make -f - -j
+
