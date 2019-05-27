@@ -43,7 +43,7 @@ function visit() {
         local target="dir_${#targets[@]}"
         targets+=("$target")
         local name="$(basename "$from")"
-        printf -- '.PHONY : %s\n%s : %s\n' "$target" "$target" "$parent_target"
+        printf -- '%s : %s\n' "$target" "$parent_target"
         printf -- '\tmkdir %q\n' "$to/$name"
         while IFS= read -r -d '' dir; do
             visit "$dir" "$to/$name" "$target"
@@ -65,7 +65,7 @@ function visit() {
         if [[ "$file" =~ ^.*\.(jpe?g|png|gif)$ ]]; then
             local target="artwork_${#targets[@]}"
             targets+=("$target")
-            printf -- '.PHONY : %s\n%s : %s\n' "$target" "$target" "$parent_target"
+            printf -- '%s : %s\n' "$target" "$parent_target"
             printf -- '\tcp %q %q\n' "$file" "$to/$(basename "$file")"
         elif [[ "$file" =~ ^.*\.flac?$ ]]; then
             flacs+=("$file")
@@ -83,7 +83,7 @@ function visit() {
         local wav_target="flac2wav_${#targets[@]}"
         wav_targets+=("$wav_target")
         targets+=("$wav_target")
-        printf -- '.PHONY : %s\n%s : %s\n' "$wav_target" "$wav_target" "$parent_target"
+        printf -- '%s : %s\n' "$wav_target" "$parent_target"
 
         local name="$(basename "$file")"
         local wav="$to/${name%.*}.wav"
@@ -96,7 +96,7 @@ function visit() {
         local m4a_target="wav2m4a_${#targets[@]}"
         m4a_targets+=("$m4a_target")
         targets+=("$m4a_target")
-        printf -- '.PHONY : %s\n%s : %s' "$m4a_target" "$m4a_target" "${wav_targets[$i]}"
+        printf -- '%s : %s' "$m4a_target" "${wav_targets[$i]}"
         if [[ $i != 0 ]]; then
             printf -- ' %s' "${wav_targets[$(($i - 1))]}"
         fi
@@ -122,7 +122,7 @@ function visit() {
     for (( i=0; i < ${#flacs_sorted[@]}; i++ )); do
         local rm_wav_target="rm_wav_${#targets[@]}"
         targets+=("$rm_wav_target")
-        printf -- '.PHONY : %s\n%s : %s' "$rm_wav_target" "$rm_wav_target" "${m4a_targets[$i]}"
+        printf -- '%s : %s' "$rm_wav_target" "${m4a_targets[$i]}"
         if [[ $i != 0 ]]; then
             printf -- ' %s' "${m4a_targets[$(($i - 1))]}"
         fi
@@ -138,8 +138,11 @@ function visit() {
         visit "$input" "$output" ""
     done
 
-    printf ".PHONY : all\nall :"
-    printf ' %s' "${targets[@]}"
-    printf '\n.DEFAULT_GOAL := all\n'
+    printf -- '.PHONY : all'
+    printf -- ' %s' "${targets[@]}"
+    printf -- ' %s'
+    printf -- '\nall :'
+    printf -- ' %s' "${targets[@]}"
+    printf -- '\n.DEFAULT_GOAL := all\n'
 } | make -f - -j
 
