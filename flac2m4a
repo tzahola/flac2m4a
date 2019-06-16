@@ -3,6 +3,8 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+parallel_flags=()
+
 while (( $# > 0 )); do
     case "$1" in
         -o|--output)
@@ -10,8 +12,12 @@ while (( $# > 0 )); do
             export output="$1"
             shift
             ;;
+        -p|--parallel)
+            shift
+            parallel_flags+=(-j)
+            ;;
         -h|--help)
-            echo "flacconv (-o|--output) output_dir [--] input ..."
+            echo "flacconv (-o|--output) output_dir [-p|--parallel] [--] input ..."
             exit
             ;;
          --)
@@ -144,5 +150,5 @@ function visit() {
     printf -- '\nall :'
     printf -- ' %s' "${targets[@]}"
     printf -- '\n.DEFAULT_GOAL := all\n'
-} | make -f - -j
+} | make -f - "${parallel_flags[@]}"
 
