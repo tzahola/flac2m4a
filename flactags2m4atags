@@ -11,7 +11,7 @@ IFS= read -r -d '' jq_script <<'EOF'
     def fallback($x): if $x == [] then null elif has($x[0]) then .[$x[0]] else fallback($x[1:]) end;
     def format_number_pair($a; $b): if $b != null then $a + "/" + $b else $a end;
     def with_key($k; $v): if $v != null then { ($k): $v } else empty end;
-    def get_year($x): [$x | scan("[0-9]{4}")][0];
+    def get_year($x): if $x != null then [$x | scan("[0-9]{4}")][0] else null end;
 
     .format.tags | with_entries(.key |= ascii_upcase) | [
         with_key("--artist"; fallback(["ARTIST"])),
