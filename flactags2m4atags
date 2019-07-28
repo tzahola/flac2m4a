@@ -16,7 +16,7 @@ IFS= read -r -d '' jq_script <<'EOF'
     .format.tags | with_entries(.key |= ascii_upcase) | [
         with_key("--artist"; fallback(["ARTIST"])),
         with_key("--title"; fallback(["TITLE"])),
-        with_key("--albumArtist"; fallback(["ALBUMARTIST", "ALBUM_ARTIST"])),
+        with_key("--albumArtist"; fallback(["ALBUMARTIST", "ALBUM_ARTIST", "ALBUM ARTIST"])),
         with_key("--album"; fallback(["ALBUM"])),
         with_key("--genre"; fallback(["GENRE"])),
         with_key("--tracknum"; format_number_pair(fallback(["TRACK", "TRACKNUMBER", "TRACK NUMBER"]); 
