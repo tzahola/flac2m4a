@@ -17,7 +17,7 @@ IFS= read -r -d '' jq_script <<'EOF'
         with_key("--artist"; fallback(["ARTIST"])),
         with_key("--title"; fallback(["TITLE"])),
         with_key("--albumArtist"; fallback(["ALBUMARTIST", "ALBUM_ARTIST", "ALBUM ARTIST"])),
-        with_key("--album"; fallback(["ALBUM"])),
+        with_key("--album"; if fallback(["ALBUM"]) != null then fallback(["ALBUM"]) + (if fallback(["EDITION"]) != null then " (" + fallback(["EDITION"]) + ")" else "" end) else null end),
         with_key("--genre"; fallback(["GENRE"])),
         with_key("--tracknum"; format_number_pair(fallback(["TRACK", "TRACKNUMBER", "TRACK NUMBER"]); 
                                                   fallback(["TRACKTOTAL", "TOTALTRACKS"]))),
@@ -29,5 +29,5 @@ IFS= read -r -d '' jq_script <<'EOF'
 EOF
 set -e
 
-eval "args=($(ffprobe -print_format json -show_entries format_tags "$flac" 2>/dev/null | jq --raw-output "$jq_script"))"
+eval "args=($(ffprobe -print_format json -show_entries format_tags "$flac" | jq --raw-output "$jq_script"))"
 AtomicParsley "$m4a" "${args[@]}" --overWrite

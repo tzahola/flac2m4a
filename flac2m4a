@@ -14,7 +14,7 @@ while (( $# > 0 )); do
             ;;
         -p|--parallel)
             shift
-            parallel_flags+=(-j)
+            parallel_flags+=(-j 8)
             ;;
         -h|--help)
             echo "flacconv (-o|--output) output_dir [-p|--parallel] [--] input ..."
@@ -50,7 +50,7 @@ function visit() {
         targets+=("$target")
         local name="$(basename "$from")"
         printf -- '%s : %s\n' "$target" "$parent_target"
-        printf -- '\tmkdir %q\n' "$to/$name"
+        printf -- '\tmkdir -p %q\n' "$to/$name"
         while IFS= read -r -d '' dir; do
             visit "$dir" "$to/$name" "$target"
         done < <(find "$from" -maxdepth 1 -mindepth 1 -type d -print0)
@@ -150,5 +150,5 @@ function visit() {
     printf -- '\nall :'
     printf -- ' %s' "${targets[@]}"
     printf -- '\n.DEFAULT_GOAL := all\n'
-} | make -f - "${parallel_flags[@]}"
+} | sed 's/\$/$$/g' | make -f - "${parallel_flags[@]}"
 
